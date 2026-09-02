@@ -83,7 +83,7 @@ sequenceDiagram
   BFF->>DB: insert generation_jobs (running)
   BFF->>D: runLessonGenerationDetached()
   BFF-->>U: SSE stream opens
-  Note over U,D: response returns immediately;<br/>work continues if the tab closes
+  Note over U,D: response returns immediately —<br/>work continues if the tab closes
 
   D->>G: Phase 1 — one call per lesson
   G-->>D: slide count, layouts, outlines
