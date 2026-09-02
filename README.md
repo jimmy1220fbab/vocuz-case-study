@@ -21,40 +21,40 @@ Source code is private. This is the public write-up.
 ```mermaid
 flowchart TB
   subgraph Supply["Content supply"]
-    T[Topic + optional reference material] --> C[Curriculum generation<br/>Gemini 3.1 Pro · one shot per course]
-    C --> P1[Phase 1 · per lesson<br/>Gemini 3 Flash<br/>slide count, layouts, outlines]
-    P1 --> P2[Phase 2 · per slide, sequential<br/>Gemini 3 Flash<br/>body, narration, quiz]
-    P2 --> M[Media + audio<br/>image gen · 3 TTS providers]
-    M --> TR[Translation<br/>en / zh / es]
+    T["Topic + optional reference material"] --> C["Curriculum generation<br/>larger reasoning model · one shot per course"]
+    C --> P1["Phase 1 · per lesson<br/>fast cheap model<br/>slide count, layouts, outlines"]
+    P1 --> P2["Phase 2 · per slide, sequential<br/>fast cheap model<br/>body, narration, quiz"]
+    P2 --> M["Media + audio<br/>image gen · 3 TTS providers"]
+    M --> TR["Translation<br/>en / zh / es"]
   end
 
   subgraph Demand["Learner experience"]
-    TR --> L[Slides, narration, quizzes]
-    L --> PRO[Pro features<br/>focus mode · adaptive quizzes<br/>smart notes · RAG tutor]
+    TR --> L["Slides, narration, quizzes"]
+    L --> PRO["Pro features<br/>focus mode · adaptive quizzes<br/>smart notes · RAG tutor"]
   end
 
   subgraph Loop["Behavior and growth engine"]
-    PRO --> EV[27 tracked event types]
+    PRO --> EV["27 tracked event types"]
     L --> EV
-    EV --> BP[Behavior profiles<br/>every 30 min · 3 scores]
-    BP --> SEG[Segment engine<br/>rule based]
-    SEG --> EM[Lifecycle email<br/>18 templates x 3 languages]
-    SEG --> AD[Ad audience sync<br/>Meta CAPI · Google Ads · nightly]
+    EV --> BP["Behavior profiles<br/>every 30 min · 3 scores"]
+    BP --> SEG["Segment engine<br/>rule based"]
+    SEG --> EM["Lifecycle email<br/>18 templates x 3 languages"]
+    SEG --> AD["Ad audience sync<br/>Meta CAPI · Google Ads · nightly"]
   end
 
   subgraph Money["Commerce"]
-    L --> BUY[Course purchase]
-    PRO --> SUB[Pro subscription]
-    BUY --> MRR[MRR / ARPU snapshots]
+    L --> BUY["Course purchase"]
+    PRO --> SUB["Pro subscription"]
+    BUY --> MRR["MRR / ARPU snapshots"]
     SUB --> MRR
   end
 
   subgraph Econ["Unit economics"]
-    C -.cost.-> LEDGER[(Per-call cost ledger)]
+    C -.cost.-> LEDGER[("Per-call cost ledger")]
     P1 -.cost.-> LEDGER
     P2 -.cost.-> LEDGER
     M -.cost.-> LEDGER
-    LEDGER --> MARGIN[Cost per course<br/>vs revenue per course]
+    LEDGER --> MARGIN["Cost per course<br/>vs revenue per course"]
     MRR --> MARGIN
   end
 
@@ -83,13 +83,14 @@ means the structural decision is made once with the whole lesson in view, and ea
 then written against a fixed brief. It also makes failure granular — one bad slide is one
 retry, not a discarded lesson.
 
-**Decision: route by task, not by default.** Curriculum generation runs on the Pro model;
-Phase 1 and Phase 2 run on Flash. The reasoning is economic. Curriculum generation happens
+**Decision: route by task, not by default.** Curriculum generation runs on the larger,
+more expensive reasoning model; the per-lesson and per-slide phases run on a fast cheap one.
+The reasoning is economic. Curriculum generation happens
 once per course and has to reason across every lesson at once, so structured-output stability
 is worth the price. Phase 2 happens once per slide — on the order of a thousand-plus calls for
 a large course — so it is the line item that decides whether the course is profitable.
-Animation code generation goes back to Pro, because invalid generated React costs more to
-handle than the model does.
+Animation code generation goes back to the larger model, because invalid generated React
+costs more to handle than the model does.
 
 **Decision: make sibling lessons aware of each other.** Lessons initially planned in isolation
 and the results read like it — repeated examples, concepts introduced twice, no through-line.
@@ -184,7 +185,7 @@ signal of intent.
 ## Stack
 
 React + Vite + TypeScript + Tailwind · Express BFF on Railway · Supabase Postgres with RLS ·
-Clerk auth · pg-boss job queue · Gemini 3 Flash / 3.1 Pro / Imagen · Cohere embeddings and
+Clerk auth · pg-boss job queue · Gemini text and image models · Cohere embeddings and
 rerank for RAG · ElevenLabs, OpenAI and Google Cloud TTS · Remotion for rendered animation ·
 Stripe billing · Resend email · Meta Conversions API and Google Ads
 
