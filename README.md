@@ -290,11 +290,42 @@ That idea is trivially easy to ship badly. Four decisions make it tolerable:
 - **It fails silently.** No webcam, or a non-HTTPS context, sets a flag and the rest of Pro keeps
   working. The headline feature of the mode is explicitly a bonus on top of the mode.
 
-Alongside it: **Skill Forge** turns quiz history into adaptive practice targeting weak topics,
-**Smart Notes** generates summaries from lesson content, an **AI Tutor** answers questions with
-retrieval over the course's own material rather than the open internet, and **Schedule Mode**
-plans study sessions and mails reminders. Each is a reason to keep paying after the course you
-bought is finished — which is the actual job of the subscription in this business model.
+**Skill Forge** is the other one worth explaining. It generates practice questions live from the
+lesson's own text — never from a pre-baked pool — under an explicit instruction, in all three
+languages, to ask only about concepts the lesson actually covers and introduce nothing from
+outside it. A pool would repeat within a week; a freely generating model would quiz people on
+material the course never taught. Generating from the source text with that constraint is the
+only version that stays honest.
+
+What it asks about is weighted, not random, and the weighting says what the feature believes
+about learning:
+
+| Your accuracy on a lesson | easy | medium | hard |
+|---|---|---|---|
+| No data yet | 1.0 | 1.5 | 1.0 |
+| Below 40% — struggling | **2.0** | 1.5 | 0.3 |
+| 40–70% — learning | 0.5 | **2.0** | 1.5 |
+| Above 70% — mastered | 0.1 | 0.8 | **2.5** |
+
+No cell is ever zero. A struggling learner still sees the occasional hard question and a
+confident one still sees an easy one, because the system's estimate of your level is a guess and
+a practice tool that never surprises you stops being practice.
+
+Which lesson gets picked is weighted too. Explicit weak topics win **70% of the time, not
+100%** — tunnelling on weaknesses is how people quit. Otherwise lessons are sampled by
+`max(0.1, 1 − accuracy) × 2`, with a floor so a mastered lesson never disappears entirely, and
+then multiplied by a **confusion boost drawn from AI Tutor conversations**: `1 + log₂(n + 1)`
+where *n* is how many times you asked the tutor about that lesson. What confused you enough to
+ask about it is the best available signal for what to test, and the log keeps ten confused
+questions from drowning out everything else.
+
+That is also the neatest loop in the product: asking the tutor for help quietly changes what the
+quiz asks you next.
+
+Alongside them: **Smart Notes** generates summaries from lesson content, the **AI Tutor** answers
+with retrieval over the course's own material rather than the open internet, and **Schedule
+Mode** plans study sessions and mails reminders. Each is a reason to keep paying after the course
+you bought is finished — which is the actual job of the subscription in this business model.
 
 ---
 
