@@ -10,6 +10,24 @@ where the marginal cost of inventory is an API bill rather than an instructor.
 That only works if generated content is reliable enough to charge for, and if you know exactly
 what each course costs to manufacture. Both are architecture problems.
 
+> ### At a glance
+>
+> **Context** — online courses are expensive and mostly not very good. If AI can generate the
+> content, the platform can own the inventory instead of taking a cut from instructors.
+>
+> **What I owned** — the whole system: a generation pipeline that turns a topic into a 50–60
+> lesson course with slides, narration, imagery and quizzes in three languages; a Pro tier built
+> around focus tracking, adaptive practice and a retrieval-based tutor; and a behavior engine
+> turning 27 event types into profiles, segments, lifecycle email and ad audiences.
+>
+> **The core decision** — instrument cost per model call from the start, and pair it with revenue
+> snapshots, so the margin on a generated course is a number rather than an argument.
+>
+> **Where it stands** — stopped, on the strength of that instrumentation. A large course runs to
+> roughly 1,400 slides once narration, imagery and three languages are counted, and speech
+> synthesis and image generation made it cost more to manufacture than the pricing could carry.
+> Without funding to buy time that is arithmetic, not a growth problem.
+
 Source code is private. This is the public write-up.
 
 **If you only read three sections:** [what makes a 60-lesson course hang
