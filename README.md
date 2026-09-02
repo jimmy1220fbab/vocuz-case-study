@@ -12,6 +12,11 @@ what each course costs to manufacture. Both are architecture problems.
 
 Source code is private. This is the public write-up.
 
+**If you only read three sections:** [what makes a 60-lesson course hang
+together](#course-level-coherence), [what people actually pay for](#what-people-pay-for), and
+[what the growth engine counts](#what-the-growth-engine-counts). The rest is architecture,
+performance, failure handling and the things that are still wrong.
+
 ---
 
 ## The system
@@ -260,6 +265,132 @@ up after a model is the intuitive move, and it is usually the wrong one.
 
 ---
 
+## What people pay for
+
+Courses are cheap. The subscription is where the margin is, so the Pro tier has to be worth a
+recurring charge on its own — which meant building things a course library structurally cannot
+copy.
+
+**VOCUZ Mode** is the one I would defend hardest. The thesis is uncomfortable but well
+evidenced: people perform better when they believe they are being observed. So the product
+watches whether you are actually looking at the lesson, and pauses when you are not.
+
+That idea is trivially easy to ship badly. Four decisions make it tolerable:
+
+- **It runs entirely in the browser.** Face landmarks are computed on-device with MediaPipe; no
+  video frame ever leaves the machine. A feature that watches your face is only shippable if the
+  answer to "where does the footage go" is "nowhere".
+- **Two independent signals.** Iris displacement and head pose are checked separately, because
+  "looking away" is sometimes the eyes and sometimes the whole head, and a system that only knows
+  one of them is wrong constantly.
+- **Three time constants, each a judgment about tolerance.** One second of grace before the UI
+  reacts at all — glancing at your coffee is not distraction. Eight seconds before it actually
+  intervenes. And the intervention fires **once per episode**, not once per frame: a focus coach
+  that nags continuously gets switched off within a day.
+- **It fails silently.** No webcam, or a non-HTTPS context, sets a flag and the rest of Pro keeps
+  working. The headline feature of the mode is explicitly a bonus on top of the mode.
+
+Alongside it: **Skill Forge** turns quiz history into adaptive practice targeting weak topics,
+**Smart Notes** generates summaries from lesson content, an **AI Tutor** answers questions with
+retrieval over the course's own material rather than the open internet, and **Schedule Mode**
+plans study sessions and mails reminders. Each is a reason to keep paying after the course you
+bought is finished — which is the actual job of the subscription in this business model.
+
+---
+
+## The creator's editing loop
+
+Generated content is wrong sometimes. What decides whether that is survivable is how cheaply it
+can be fixed, so regeneration exists at three granularities and each one is defined by what it
+*preserves*.
+
+| Scope | Cost | Preserves |
+|---|---|---|
+| One slide | 5–15 s | **The narration, and therefore the audio.** Fixing a typo does not re-bake 30 minutes of speech. |
+| One lesson | 60–120 s | Nothing within the lesson; queued jobs for it are cancelled first so a stale image cannot land on fresh content. |
+| Whole curriculum | Full rebuild | Nothing. Drops 50–60 lesson rows and their student progress. |
+
+Two constraints in that table are product decisions rather than technical ones.
+
+**Single-slide regeneration is primary-language only,** and asking for it in a secondary language
+returns an error that names the right tool instead. The alternative — quietly regenerating one
+language — desynchronises the course, and a course whose Chinese version disagrees with its
+English version is worse than one that refused the edit.
+
+**Quiz slides regenerate as pairs.** A question card and its solution are one unit; letting
+someone regenerate the question alone produces a solution to a question that no longer exists.
+
+The whole-curriculum path is the destructive one. It has to pre-clear five tables that reference
+lessons — including student progress, chat history and focus sessions — before the parent rows
+can go. That the operation is *possible* is correct; that it silently discards a student's
+history is the kind of thing that needs to be said out loud in the UI, not just handled in the
+code.
+
+**One incident is worth recording.** Regenerating a curriculum replaced the lesson list but did
+not clear the stored title translations. The result was a live course whose Chinese titles
+described an entirely different curriculum than its English ones — every individual write was
+correct, and the product was still wrong. Partial updates across a translated data model fail
+quietly and look fine from whichever language you happen to be testing in.
+
+---
+
+## What the growth engine counts
+
+Three scores per user, recomputed every thirty minutes from thirteen sources. The weights are
+where the product opinion lives.
+
+**Engagement (0–100)** — completed lessons up to 30 points, focus time up to 20, average quiz
+score up to 15, Pro features used up to 15, and recency up to 20.
+
+Recency being capped at a fifth is the deliberate part. Most engagement models over-weight it,
+so a user who opened the app yesterday and did nothing outranks one who finished four lessons
+last week. Here completion and focus time are worth fifty together: engagement means learning
+happened, not that someone visited.
+
+**Conversion likelihood (0–100)** — viewed the Pro page +20, **opened checkout +25**, engagement
+above 50 +15, currently trialling +20, has saved courses +10, more than three sessions in the
+last week +10.
+
+An abandoned checkout scores higher than being mid-trial. Everyone on this platform gets a trial
+automatically, so trialling says almost nothing; reaching a payment form and stopping says
+someone decided to buy and then hesitated, which is a completely different conversation to have
+with them.
+
+**Churn risk (0–100)** — inactive over 30 days +60, over 14 +40, over 7 +20; cancelled +30;
+schedule attendance below half +15; and a declining-trend term of +15 when the last week's
+session count falls below a quarter of the last month's.
+
+That trend term is the only one that fires before the user is already gone. Inactivity thresholds
+tell you about a churn that has finished happening. A weekly rate dropping below the user's own
+monthly average catches the slowdown while there is still something to intervene on — which is
+the only version of this that is worth building.
+
+VOCUZ Mode usage is one of the thirteen inputs, so the focus feature feeds the model that decides
+who gets contacted. The loop is genuinely closed rather than diagrammatically closed.
+
+---
+
+
+## How segments turn into outreach
+
+Membership in a segment drives two outputs. Lifecycle email runs across eighteen templates in
+three languages with per-template cooldowns, so a user cannot be hit twice for the same reason.
+A nightly job syncs audiences to Meta's Conversions API and Google Ads, so paid acquisition
+targets lookalikes of people who actually converted rather than people who merely signed up.
+
+Recommendations score candidate courses across six weighted dimensions — semantic similarity
+from embeddings (30%), category affinity (15%), difficulty fit (15%), engagement (15%),
+knowledge gap (15%), purchase history (10%) — and an LLM pass writes the one-line reason shown
+to the user. The weighting is deliberately not semantic-only: a course that is textually similar
+to what someone finished is often the last thing they need next, which is what the gap dimension
+is there to counter.
+
+Segment-specific discount codes appear in email copy and are redeemed in Stripe's promo field
+rather than auto-applied. Making the user type the code turns redemption into a measurable
+intent signal instead of an invisible discount.
+
+---
+
 ## Failure handling
 
 Content that is 95% good is not a product when someone paid for it. Every failure mode has a
@@ -429,27 +560,6 @@ roughly 1,400 slides, each wanting a text call, often an image, and narration au
 multiplied by three languages — the answer is dominated by speech synthesis and image
 generation, not by the text model everyone assumes is the expensive part. The ledger made that a
 measurement rather than an argument.
-
----
-
-## The growth engine
-
-Internal infrastructure, not a user-facing feature.
-
-Twenty-seven client event types flush into `feature_events`. Every thirty minutes a worker
-aggregates thirteen data sources into a per-user profile carrying engagement, conversion-intent
-and churn-risk scores. A JSON rule engine with eleven operators evaluates segment membership
-against those profiles. Membership drives lifecycle email across eighteen templates in three
-languages with per-template cooldowns, and a nightly audience sync to Meta's Conversions API and
-Google Ads so paid acquisition targets lookalikes of users who actually converted.
-
-Recommendations score candidates across six weighted dimensions — semantic similarity from
-Cohere embeddings (30%), category affinity (15%), difficulty fit (15%), engagement (15%),
-knowledge gap (15%), purchase history (10%) — with an LLM pass writing the reason string shown
-to the user.
-
-Segment-specific discount codes appear in email copy and are redeemed in Stripe's promo field
-rather than auto-applied, so redemption is itself a measurable intent signal.
 
 ---
 
