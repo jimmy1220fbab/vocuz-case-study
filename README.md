@@ -131,18 +131,117 @@ than a discarded lesson.
 
 That last row is the pattern in miniature: the cheapest call is the one you remove.
 
-**Coherence is an input property, not a cleanup pass.** Lessons first planned in isolation and
-read like it — repeated examples, concepts introduced twice. Three mechanisms fixed it without a
-second pass over the course:
+---
 
-- The curriculum emits `keyConcepts`, `primaryExample` and `buildsOn` per lesson, persisted to
-  `lessons` columns and visible to Phase 1
-- Each finalized lesson writes `lessons.content_digest`; later lessons fetch prior digests
-- Each Phase 2 call receives `lessonStructure` (all slide titles in the lesson),
-  `priorLessonSummaries`, and `priorNarrations` (narrations already finalized in this lesson)
+## Course-level coherence
 
-A whole-lesson cohesion pass was retired once these landed — it had been solving downstream what
-the input could solve upstream.
+A 60-lesson course generated lesson-by-lesson reads like 60 essays by 60 authors: the same
+example reintroduced twice, notation that drifts between lessons, lesson 40 explaining something
+lesson 12 already taught. This was the hardest problem in the system and it is solved entirely
+upstream.
+
+### The curriculum is a contract, not a list of titles
+
+Curriculum generation is one grounded call — `gemini-3.1-pro` with Google Search, roughly 10–15
+searches — and it is forced through a function call. `toolConfig.functionCallingConfig` is set to
+`mode: 'ANY'` with `allowedFunctionNames: ['emit_curriculum']`, so the model *cannot* answer in
+free text. Every lesson comes back as:
+
+```ts
+interface GroundedLessonPlan {
+  title: string;
+  keyConcepts: string[];    // 3–5 specific concepts
+  primaryExample: string;   // the running scenario for this lesson
+  buildsOn: string[];       // natural-language references to earlier lessons
+}
+```
+
+`primaryExample` and `buildsOn` are the coherence primitives. They are decided once, for the
+whole course, by a model that can see every lesson at the same time — which is the only moment
+in the pipeline where that global view exists.
+
+**Length is pinned, not inferred.** Every course targets 50–60 lessons, a hard floor and a hard
+ceiling, because pricing, completion arcs and the value model are all calibrated to that range.
+The prompt carries explicit decomposition guidance in both directions: fewer than 50 means the
+topic was over-compressed and major concepts should be split into natural sub-lessons ("Mean
+Reversion" → theory, pairs-trading mechanics, cointegration testing, half-life estimation); more
+than 60 means padding or over-granular splitting, so merge siblings.
+
+An earlier design offered Focused / Standard / Comprehensive / Deep tiers. They were removed —
+they produced topic-specific scope drift, where the same tier meant something different for
+quant trading than for web development. A fixed range with decomposition rules turned out to be
+more predictable than a knob.
+
+**Difficulty selects topics; it does not change density.** Beginner allows 2–3 key concepts per
+lesson with every concept explainable in two minutes and no untaught prerequisites; advanced
+allows 3–5 with edge cases, tradeoffs and field-appropriate mathematics. The prompt anchors each
+level to reference material a human would recognise — Codecademy and freeCodeCamp at one end,
+MIT OpenCourseWare and graduate texts at the other — because "harder" is not an instruction a
+model can act on but "pitch this like OCW" is.
+
+**Bookends are mandatory and structurally different.** Lesson 1 is an opener with orientation
+concepts (course goals, roadmap, prerequisites — never field jargon) and an empty `buildsOn`.
+The final lesson is a wrap-up whose `buildsOn` points at the most significant concepts from the
+middle of the course, so the synthesis is anchored in what was actually taught rather than
+invented at the end.
+
+### One prompt rule that got shorter and worked better
+
+The curriculum prompt originally carried a ~50-line "scope honesty" block: a universal test,
+worked examples across eight domains, title-pattern guardrails, an anti-reframing safeguard.
+Its purpose was to stop the model proposing lessons Vocuz cannot deliver — slides and voiceover
+cannot walk someone through deploying a service.
+
+It backfired. Even with explicit whitelisted examples like *"Implementing the Sharpe Ratio in 10
+lines of Python (annotated)"*, the surrounding framing pushed the model toward "play it safe,
+show no code at all", and curricula came back with zero code-walkthrough lessons even for
+domains that are mostly code.
+
+It was collapsed to one rule: slides can show anything static — text, equations, diagrams,
+charts, code. No project building; do not promise the student will build, deploy, set up,
+connect to or configure anything. Ban the promise, do not prescribe the content, let the model
+infer per domain. Shorter and stricter beat longer and hedged.
+
+### Three channels carry context forward
+
+Each lesson's Phase 1 receives, alongside its own title and description:
+
+| Channel | Contents | Purpose |
+|---|---|---|
+| `curriculumPlan` | The **entire** course plan — order, title, `keyConcepts`, `primaryExample`, `buildsOn` for every lesson | This lesson knows what its siblings will cover, before and after |
+| `priorLessonSummaries` | `content_digest` of each already-finalized lesson | This lesson knows what was actually said, not just what was planned |
+| `allLessonTitles` + `currentLessonIndex` | Position in the sequence | Callbacks and forward references land on real neighbours |
+
+Phase 2 then adds two more within the lesson: `lessonStructure` (every slide title) and
+`priorNarrations` (narrations already finalized earlier in this same lesson), so slide 14 can
+open on a callback to slide 9 without repeating it.
+
+Plan and reality are deliberately separate inputs. The plan says what lesson 12 was *supposed*
+to cover; the digest says what it *did*. Later lessons get both, because generation drifts and
+building on the plan alone reintroduces exactly the incoherence this is meant to prevent.
+
+`buildCurriculumBlock` degrades in three tiers — full enriched plan, titles only, nothing at all
+— so courses created before the plan contract existed still regenerate instead of crashing on a
+missing column.
+
+### The repair pass that made things worse
+
+There used to be a cohesion pass: one extra Flash call after Phase 2 that rewrote every slide
+narration in a lesson for consistent notation, running examples and callbacks.
+
+It was removed. It cost 5–8 seconds per lesson, and — the real problem — **it introduced its own
+inconsistencies, rewriting a correct slide to match an incorrect neighbour.** A repair pass that
+cannot tell which of two disagreeing slides is right will propagate errors as readily as it
+fixes them.
+
+What replaced it moved the same constraints upstream: a `notationTable` emitted by Phase 1 and
+threaded into every Phase 2 call, plus `primaryExample` from the curriculum contract and
+`priorNarrations` continuity hints. Consistency became a property of the input rather than the
+output of a rewrite.
+
+That is the generalisable lesson from this system: **when generated output is inconsistent, the
+fix is almost always further upstream than it feels like it should be.** Adding a pass to clean
+up after a model is the intuitive move, and it is usually the wrong one.
 
 ---
 
