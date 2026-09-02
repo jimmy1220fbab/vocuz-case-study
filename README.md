@@ -99,9 +99,12 @@ sequenceDiagram
   Note over Q,DB: orphan sweep fails jobs with<br/>no progress for 10 min
 ```
 
-Progress streams over SSE rather than being polled, because the client needs per-slide
-granularity across a twenty-minute run. State lives in `generation_jobs`, so a reconnecting
-client resumes from the row rather than from the stream.
+Progress is **both** streamed and polled, and the split is deliberate. SSE carries seven event
+types — `job-assigned`, `job-started`, `progress`, `slide-ready`, `section-ready`, `complete`,
+`error` — at per-slide resolution. A separate polled endpoint reads `generation_jobs`, which is
+written at coarser granularity (every third slide, plus phase transitions). The client overlays
+the stream on the poll: SSE gives resolution while the connection holds, the poll gives
+durability when it does not. A network blip or a page refresh loses the stream, not the run.
 
 ---
 
@@ -217,8 +220,20 @@ Phase 2 then adds two more within the lesson: `lessonStructure` (every slide tit
 open on a callback to slide 9 without repeating it.
 
 Plan and reality are deliberately separate inputs. The plan says what lesson 12 was *supposed*
-to cover; the digest says what it *did*. Later lessons get both, because generation drifts and
-building on the plan alone reintroduces exactly the incoherence this is meant to prevent.
+to cover; the digest says what it *did*. Generation drifts, so building on the plan alone
+reintroduces exactly the incoherence this is meant to prevent.
+
+**But the digest channel is empty on the path that matters most.** Generating a whole course
+fires every lesson in parallel — that is what turns 90 minutes of sequential work into 10–20
+minutes of wall time. It also means no earlier lesson has finished writing its digest when a
+later lesson's Phase 1 runs, so `priorLessonSummaries` arrives empty for every lesson in a batch.
+The channel pays off on sequential generation, on regenerating a single lesson, and on lessons
+added to an existing course — not on the first build.
+
+That is a real tension, not an oversight: the parallelism that makes course generation tolerable
+is exactly what starves the mechanism designed to make it coherent. Course-wide coherence in a
+batch therefore rests entirely on the curriculum contract, which is why the contract is forced
+through a function call and pinned to a fixed lesson range rather than left to prose.
 
 `buildCurriculumBlock` degrades in three tiers — full enriched plan, titles only, nothing at all
 — so courses created before the plan contract existed still regenerate instead of crashing on a
@@ -278,6 +293,56 @@ existed still regenerate instead of crashing on a missing column.
 
 **Narration has three providers** behind one interface, so a TTS outage or a voice-quality
 regression is a config change rather than an incident.
+
+---
+
+## Bugs worth remembering
+
+Cross-lesson context is the part that breaks in ways nobody notices until a student does.
+
+**An off-by-one shifted every cross-lesson reference in the course.** A single index error meant
+Phase 2 narration citing "Lesson N" was always pointing one lesson away. It surfaced when a
+lesson-3 slide said *"the random walk hypothesis discussed in lesson three"* — random walk was
+lesson two's content. Every callback in every course was quietly wrong, and nothing in the
+pipeline could detect it, because a confident wrong reference is indistinguishable from a
+correct one to everything except a reader who knows the material.
+
+**The model invented course structure that did not exist.** A lesson-1 narration announced a
+"Phase 4: Execution & Cloud" that corresponded to no lesson in the curriculum — a plausible-
+sounding roadmap synthesised from nothing. The fix was a rule in the curriculum preamble
+forbidding fabricated phase labels in roadmap, recap and preview slides: those slides may only
+name lessons that exist.
+
+**Framing a word count as a ceiling caused systematic under-delivery.** The prompt said "at
+most N words"; slides came back consistently short. Changing the framing to "aim for N" fixed
+it without changing the number. The model treats a ceiling as a target to stay safely under.
+
+**A schema change had to be applied in six places.** Adding the curriculum plan contract meant
+three separate insert/update path pairs in the course routes, and missing one would have silently
+dropped the plan on that path. All six were found in review — it is the kind of gap that a type
+system does not catch when the paths were duplicated before the field existed.
+
+---
+
+## Known limitations
+
+Written down because a case study without them is marketing.
+
+- **No server-side resume.** `generation_jobs` records status but nothing auto-resumes; if the
+  backend restarts mid-generation, in-flight lessons are lost and the orphan sweep marks them
+  failed after ten minutes. The client can reconnect; the server cannot.
+- **`buildsOn` references are natural-language strings, not foreign keys.** "the activation
+  function from L14" is text. Renaming lesson 14 leaves a dangling reference that degrades
+  quietly rather than failing loudly.
+- **No adversarial QA pass.** Content quality rests on the model's own self-consistency. Nothing
+  checks for broken LaTeX, circular definitions, or factual errors before a student sees them.
+- **The digest only captures summary-slide narration.** A concept defined on slide 5 but not
+  restated in the summary is invisible to later lessons.
+- **Spanish is translated, not native.** Slide-generation prompts branch on Chinese versus
+  everything-else, so Spanish-primary courses generate in English and translate — correct output,
+  wasted tokens.
+- **Courses created before the plan contract have no plan.** There is no backfill; they fall
+  through to the titles-only tier until regenerated.
 
 ---
 
